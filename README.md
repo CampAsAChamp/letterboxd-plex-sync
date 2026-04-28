@@ -6,7 +6,7 @@ A tool that syncs [Letterboxd](https://letterboxd.com/) user data (ratings, watc
 
 This project is provided “as-is” without any guarantees or warranties of any kind. By using this tool, you accept full responsibility for any risks, including but not limited to data loss, misconfigurations, or disruptions to your Plex or Radarr server.
 - Rate Limits: Frequent use of this tool may trigger API rate limits for Plex, TMDB, or Radarr. Ensure you comply with their respective terms of service.
-- Letterboxd Scraping: This tool relies on simulating Letterboxd browser actions. Use this tool responsibly and at your own risk, as it is unknown if this could result in account restrictions. 
+- Letterboxd Data: This tool relies on simulating Letterboxd browser actions to download your user data. Use this tool responsibly and at your own risk, as it is unknown if this could result in account restrictions. 
 - Sensitive Data: Handle your .env file carefully, as it contains sensitive credentials (e.g., Plex token, Letterboxd credentials, API keys). Do not share this file or include it in public repositories.
 - Testing Recommended: Test this tool on a non-production server or with a limited dataset before deploying it to your main Plex or Radarr setup.
 - Use at Your Own Risk: The authors are not responsible for **any** consequences resulting from the use of this tool.
