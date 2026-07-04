@@ -89,36 +89,50 @@ def main() -> None:
     watchlist_csv = os.getenv("LETTERBOXD_WATCHLIST_CSV", "/tmp/static/watchlist.csv")
     watched_csv = os.getenv("LETTERBOXD_WATCHED_CSV", "/tmp/static/watched.csv")
 
-    workflow = WorkflowSteps(
-        build_workflow_steps(
-            map_letterboxd_to_tmdb=map_letterboxd_to_tmdb,
-            sync_watched=sync_watched_enabled,
-            sync_ratings=sync_ratings_enabled,
-            sync_watchlist=sync_watchlist_to_plex_enabled,
-            sync_radarr=sync_watchlist_to_radarr_enabled,
-        )
+    step_names = build_workflow_steps(
+        map_letterboxd_to_tmdb=map_letterboxd_to_tmdb,
+        sync_watched=sync_watched_enabled,
+        sync_ratings=sync_ratings_enabled,
+        sync_watchlist=sync_watchlist_to_plex_enabled,
+        sync_radarr=sync_watchlist_to_radarr_enabled,
     )
+    logging.info(
+        "Planned workflow (%d steps): %s",
+        len(step_names),
+        " → ".join(step_names),
+    )
+    workflow = WorkflowSteps(step_names)
 
     env = require_env("PLEX_BASEURL", "PLEX_TOKEN", "TMDB_API_KEY")
     plex_base_url = env["PLEX_BASEURL"]
     plex_token = env["PLEX_TOKEN"]
     tmdb_api_key = env["TMDB_API_KEY"]
 
+    logging.info("Connecting to Plex at %s ...", plex_base_url)
     plex = PlexServer(plex_base_url, plex_token)
+    logging.info("Connected to Plex server %r", plex.friendlyName)
+
+    logging.info("Authenticating with MyPlex ...")
     account = MyPlexAccount(token=plex_token)
 
     plex_user_name = os.getenv("PLEX_USER")
     if plex_user_name:
+        logging.info('Switching to Plex home user "%s" ...', plex_user_name)
         plex_user_pin = os.getenv("PLEX_PIN")
         user = account.switchHomeUser(user=plex_user_name, pin=plex_user_pin)
         plex = plex.switchUser(plex_user_name)
+        logging.info('Using Plex home user "%s"', user.title)
     else:
         user = account
+        logging.info('Using Plex account "%s"', user.title)
 
     with workflow.step("Download Letterboxd user data"):
+        logging.info("Logging into Letterboxd (this may take a minute) ...")
         downloader = ws.Connector()
         downloader.login()
+        logging.info("Letterboxd login successful; downloading export CSVs ...")
         downloader.download_stats()
+        logging.info("Letterboxd export download complete")
 
     if plex_library_name:
         try:
@@ -168,9 +182,6 @@ def main() -> None:
 
     load_existing_mapping(letterboxd_to_tmdb_csv)
 
-    if sync_watchlist_to_plex_enabled or sync_watched_enabled or sync_ratings_enabled:
-        logging.info('Using Plex user "%s"', user.title)
-
     if sync_watched_enabled:
         with workflow.step("Sync watched status to Plex"):
             sync_plex_watched_status_from_letterboxd(watched_csv, stats)
@@ -193,7 +204,17 @@ def main() -> None:
                 stats,
             )
 
-    stats.log_summary()
+    report_path = os.getenv(
+        "SYNC_REPORT_PATH", "/app/data/latest_sync_report.txt"
+    )
+    combined_log_path = os.getenv(
+        "COMBINED_LOG_PATH", "/app/data/combined_log.txt"
+    )
+    os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
+    stats.write_report(report_path)
+    stats.log_summary(
+        report_path=report_path, combined_log_path=combined_log_path
+    )
     logging.info("Sync process complete.")
 
 

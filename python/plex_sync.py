@@ -85,6 +85,7 @@ def sync_plex_ratings_from_letterboxd(ratings_csv: str, stats: SyncStats) -> Non
         video = get_plex_video_by_letterboxd_url(lb_url)
         if not video:
             stats.ratings_not_in_library += 1
+            stats.record("rating", lb_title, "not_in_library")
             logging.debug("Rating: Failed to find: %s", lb_title)
             progress.advance()
             continue
@@ -97,17 +98,15 @@ def sync_plex_ratings_from_letterboxd(ratings_csv: str, stats: SyncStats) -> Non
                     "[DRY RUN] Would rate %s at %s/10", video.title, lb_rating
                 )
                 stats.rated += 1
+                stats.record("rating", lb_title, "updated", f"{lb_rating}/10")
             else:
                 video.rate(lb_rating)
                 stats.rated += 1
+                stats.record("rating", lb_title, "updated", f"{lb_rating}/10")
                 logging.debug("Rated %s at %s/10", video.title, lb_rating)
         else:
             stats.ratings_skipped += 1
-            logging.debug(
-                "Skipped rating %s. Already rated at %s/10",
-                video.title,
-                video.userRating,
-            )
+            stats.record("rating", lb_title, "unchanged", f"{video.userRating}/10")
         progress.advance()
 
     progress.finish()
@@ -139,6 +138,7 @@ def sync_plex_watchlist_from_letterboxd(
             tmdb_id = letterboxd_to_tmdb_map.get(lb_url)
             if not tmdb_id:
                 stats.watchlist_not_in_library += 1
+                stats.record("watchlist", lb_title, "not_in_library", "no TMDB ID")
                 logging.warning("Skipping: No TMDB ID found for %s", lb_url)
                 progress.advance()
                 continue
@@ -146,6 +146,7 @@ def sync_plex_watchlist_from_letterboxd(
 
         if not video:
             stats.watchlist_not_in_library += 1
+            stats.record("watchlist", lb_title, "not_in_library")
             logging.debug("Watchlist: Failed to find in Plex: %s", lb_title)
             progress.advance()
             continue
@@ -154,18 +155,21 @@ def sync_plex_watchlist_from_letterboxd(
             if is_dry_run():
                 logging.info("[DRY RUN] Would add to watchlist: %s", video.title)
                 stats.watchlist_added += 1
+                stats.record("watchlist", lb_title, "added")
             else:
                 try:
                     video.addToWatchlist(user)
                     stats.watchlist_added += 1
+                    stats.record("watchlist", lb_title, "added")
                     logging.info("Added to watchlist: %s", video.title)
                 except BadRequest:
+                    stats.record("watchlist", lb_title, "error", "Plex BadRequest")
                     logging.error(
                         'An error occurred when adding "%s" to watchlist.', video.title
                     )
         else:
             stats.watchlist_skipped += 1
-            logging.debug("Already on watchlist: %s", video.title)
+            stats.record("watchlist", lb_title, "already_listed")
         progress.advance()
 
     progress.finish()
@@ -191,6 +195,7 @@ def sync_plex_watched_status_from_letterboxd(watched_csv: str, stats: SyncStats)
         video = get_plex_video_by_letterboxd_url(lb_url)
         if not video:
             stats.watched_not_in_library += 1
+            stats.record("watched", lb_title, "not_in_library")
             logging.debug("Watched: Failed to find: %s", lb_title)
             progress.advance()
             continue
@@ -199,13 +204,15 @@ def sync_plex_watched_status_from_letterboxd(watched_csv: str, stats: SyncStats)
             if is_dry_run():
                 logging.info("[DRY RUN] Would mark %s as played.", video.title)
                 stats.marked_watched += 1
+                stats.record("watched", lb_title, "marked")
             else:
                 video.markPlayed()
                 stats.marked_watched += 1
+                stats.record("watched", lb_title, "marked")
                 logging.info("Marked %s as played.", video.title)
         else:
             stats.watched_skipped += 1
-            logging.debug("Skipped marking %s as played. Already marked.", video.title)
+            stats.record("watched", lb_title, "already_played")
         progress.advance()
 
     progress.finish()

@@ -186,12 +186,15 @@ def sync_watchlist_to_radarr(
         lb_url = row[3]
         tmdb_id = letterboxd_to_tmdb_map.get(lb_url)
         if tmdb_id is None:
+            stats.radarr_failed += 1
+            stats.record("radarr", lb_title, "failed", "no TMDB ID")
             logging.debug("Radarr Sync: Failed to find TMDB ID for %s", lb_title)
             progress.advance()
             continue
 
         if int(tmdb_id) in existing_tmdb_ids:
             stats.radarr_already_exists += 1
+            stats.record("radarr", lb_title, "already_present")
             logging.debug("Skipping %s. Already in Radarr.", lb_title)
             progress.advance()
             continue
@@ -199,11 +202,20 @@ def sync_watchlist_to_radarr(
         result = add_to_radarr(tmdb_id, radarr_url, radarr_token, tag_names=radarr_tags)
         if result == "added":
             stats.radarr_added += 1
+            stats.record("radarr", lb_title, "added", f"TMDB {tmdb_id}")
             existing_tmdb_ids.add(int(tmdb_id))
         elif result == "already_exists":
             stats.radarr_already_exists += 1
+            stats.record("radarr", lb_title, "already_present")
+        elif result == "not_found":
+            stats.radarr_failed += 1
+            stats.record("radarr", lb_title, "not_found", f"TMDB {tmdb_id}")
+        elif result == "path_conflict":
+            stats.radarr_failed += 1
+            stats.record("radarr", lb_title, "path_conflict", f"TMDB {tmdb_id}")
         else:
             stats.radarr_failed += 1
+            stats.record("radarr", lb_title, "failed", f"TMDB {tmdb_id}")
         progress.advance()
 
     progress.finish()

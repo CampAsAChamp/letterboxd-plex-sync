@@ -72,19 +72,21 @@ def populate_letterboxd_tmdb_mapping_file(
         except requests.RequestException as exc:
             logging.debug("TMDB API lookup failed for %s: %s", lb_title, exc)
             stats.mappings_failed += 1
+            stats.record("mapping", lb_title, "failed", f"API error: {exc}")
             stage.advance()
             continue
 
         if tmdb_id is None:
             logging.debug("No TMDB match for %s", lb_title)
             stats.mappings_failed += 1
+            stats.record("mapping", lb_title, "failed", "no TMDB match")
             stage.advance()
             continue
 
         letterboxd_to_tmdb_map[lb_url] = tmdb_id
         new_mappings.append(f"{lb_url},{tmdb_id}\n")
         stats.mappings_added += 1
-        logging.debug("Added mapping for %s -> TMDB %s", lb_title, tmdb_id)
+        stats.record("mapping", lb_title, "added", f"TMDB {tmdb_id}")
         stage.advance()
 
     if own_progress:
