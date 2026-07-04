@@ -1,33 +1,25 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Generate the config.toml file
+# Step 1: Generate letterboxd_stats config from environment
 python /app/generate_config.py
 
-# Check if the RUN_NOW environment variable is set
-if [ "$RUN_NOW" == "true" ]; then
+touch /app/combined_log.txt
+
+# Step 2: Optionally run sync immediately on startup
+if [ "${RUN_NOW:-false}" = "true" ]; then
   echo "RUN_NOW is set to true. Running job immediately..."
-  # Run your Python script manually (the cron job) before starting cron
-  python /app/sync_lb_to_plex.py
+  /usr/local/bin/python /app/sync_lb_to_plex.py >> /app/combined_log.txt 2>&1
 else
-  echo "RUN_NOW is not set. Proceeding with regular cron schedule."
+  echo "RUN_NOW is not set. Proceeding with scheduled sync."
 fi
 
-# Use the CRON_SCHEDULE environment variable or default to every dat at 4am
+# Step 3: Start supercronic with the configured schedule
 CRON_SCHEDULE=${CRON_SCHEDULE:-"0 4 */1 * *"}
-
-# Export environment variables to a file
-printenv | grep -v "no_proxy" > /etc/environment
-
-# Replace the placeholder in the cron template with the actual cron schedule
-sed "s|\${CRON_SCHEDULE}|$CRON_SCHEDULE|g" /etc/cron.d/crontab_template > /etc/cron.d/crontab
-
-# Apply permissions and load the new crontab
+sed "s|\${CRON_SCHEDULE}|${CRON_SCHEDULE}|g" /etc/cron.d/crontab_template > /etc/cron.d/crontab
 chmod 0644 /etc/cron.d/crontab
-crontab /etc/cron.d/crontab
 
-# Start cron explicitly regardless of RUN_NOW
-echo "Starting cron..."
-cron
+echo "Starting supercronic with schedule: ${CRON_SCHEDULE}"
 
-touch /app/combined_log.txt
-tail -f /app/combined_log.txt
+# tini handles signals; supercronic runs in foreground and inherits Docker env
+exec tini -s -- supercronic /etc/cron.d/crontab
