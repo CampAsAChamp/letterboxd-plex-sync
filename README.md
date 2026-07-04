@@ -29,11 +29,12 @@ Currently, it focuses on syncing:
 ### 🎯 The Script
 The core functionality is provided by a Python script that:
 1. **Fetches Data**: Downloads user data from Letterboxd using the `letterboxd_stats` library.
-2. **Processes Metadata**: Maps Letterboxd data to Plex-compatible IDs using TMDB for additional metadata when required.
+2. **Processes Metadata**: Maps Letterboxd data to Plex-compatible IDs using the TMDB API (cached in a local CSV).
 3. **Syncs Data**: Updates the Plex server by:
    - Adding ratings from Letterboxd.
-   - Marking movies as watched/unwatched.
-   - Syncing the Letterboxd watchlist, optionally integrating with Radarr.
+   - Marking movies as played (one-way — never un-watches).
+   - Adding Letterboxd watchlist items to Plex (add-only — never removes).
+   - Optionally adding watchlist movies to Radarr (add-only).
 
 The script behavior is highly configurable through environment variables, allowing users to tailor the sync to their specific requirements.
 
@@ -58,12 +59,13 @@ For users who manage their media with Radarr, the script offers an additional in
 The Python script is wrapped within a lightweight Docker container that automates execution via a cron process. The container:
 1. **Runs Immediately (Optional)**: With the `RUN_NOW` environment variable, the sync job can execute as soon as the container starts.
 2. **Schedules Jobs**: A cron process schedules recurring sync jobs based on the `CRON_SCHEDULE` environment variable.
-3. **Logs Activity**: Outputs logs to a combined file for easy monitoring of sync activities and troubleshooting.
+3. **Logs Activity**: Outputs logs to stdout (captured in `/app/combined_log.txt` in Docker) for easy monitoring.
 
 ### 📂 Configuration and Portability
 The container is designed for ease of use:
-- Configurations are passed as environment variables in a `.env` file.
+- Configurations are passed as environment variables in a `letterboxd.env` file (copy from `letterboxd.env.example`).
 - Users can choose between running the script locally or using Docker, depending on their preferences and setup.
+- Behind a corporate TLS proxy (e.g. Zscaler), drop your root CA `.pem` in `certs/` before building the Docker image.
 
 This design ensures seamless integration with your existing Plex server and minimal manual intervention once deployed.
 
@@ -81,6 +83,7 @@ The script relies on several environment variables for configuration. Here is a 
 
 ### Optional Environment Variables
 - **`DEBUG`**: Set to `true` to enable debug logging. Defaults to `false`.
+- **`DRY_RUN`**: Set to `true` to preview planned Plex/Radarr changes without writing. Logs `[DRY RUN] Would …` for each action. Defaults to `false`.
 - **`RUN_NOW`**: Set to `true` to run the sync job immediately when the container starts. Defaults to `false`.
 ####  
 - **`CRON_SCHEDULE`**: The schedule for the cron job (e.g., `0 4 */1 * *` for every day at 4:00AM). Defaults to `0 4 */1 * *`.
@@ -100,57 +103,31 @@ The script relies on several environment variables for configuration. Here is a 
 - **`RADARR_MONITORED`**: Whether to set movies as monitored in Radarr. Defaults to `true`.
 - **`RADARR_SEARCH`**: Whether to search for the movie after it is added to Radarr.  Defaults to `true`.
 - **`RADARR_QUALITY_PROFILE`**: The name of the quality profile to use in Radarr (e.g., `HD - 1080p`). If not provided or not found, defaults to the profile with ID `1`. Optional.
+####
+- **`MAP_LETTERBOXD_TO_TMDB`**: Set to `false` to skip building/updating the Letterboxd→TMDB mapping cache. Defaults to `true`. When the cache already contains every URL from your Letterboxd exports, API lookups are skipped automatically.
+- **`LB_TMDB_MAP_CSV_PATH_OVERRIDE`**: Path to the LB→TMDB mapping CSV cache. Defaults to `/app/data/lb_URL_to_tmdb_id.csv`.
+- **`LETTERBOXD_RATINGS_CSV`**, **`LETTERBOXD_WATCHLIST_CSV`**, **`LETTERBOXD_WATCHED_CSV`**: Override paths to Letterboxd export CSVs. Defaults to `/tmp/static/` paths set by `letterboxd_stats`.
 
 
 
-### Example `letterboxd.env`
-```env
-# Schedule for the cron job (default: every day at 4:00AM)
-#CRON_SCHEDULE="0 4 */1 * *"
+### Setup: `letterboxd.env`
 
-# Immediately run the sync job on container startup (default: false)
-#RUN_NOW="false"
+Copy the example template and fill in your credentials:
 
-# Debug mode (default: false)
-#DEBUG="false"
-
-# Plex server configuration (required)
-PLEX_BASEURL="http://your-plex-server:32400"
-PLEX_TOKEN="your_plex_token_here"
-
-# Plex details (optional depending on setup)
-#PLEX_LIBRARY_NAME='Movies'        # Optional: to sync only one library
-#PLEX_USER="your_plex_username"    # Optional: switch to a specific Plex user
-#PLEX_PIN="your_plex_pin_here"     # Optional: required if switching Plex user
-
-# Letterboxd credentials (required for downloading data)
-LB_USERNAME="your_letterboxd_username"
-LB_PASSWORD="your_letterboxd_password"
-
-# TMDB API key (required for TMDB lookups)
-TMDB_API_KEY="your_tmdb_api_key_here"
-
-# Radarr configuration
-RADARR_URL="http://your-radarr-server:7878"  # required if syncing to Radarr
-RADARR_TOKEN="your_radarr_api_key_here"      # required if syncing to Radarr
-RADARR_TAGS="letterboxd-plex-sync, auto"     # optional: set whatever tags you like, or comment this out to skip adding tags
-#RADARR_ROOT_FOLDER='/movies'                # Radarr desintation folder. default: '/movies'
-#RADARR_MONITORED='true'                     # Monitor movie in Radarr. default: 'true'  
-#RADARR_SEARCH='true'                        # Search movie after adding. default: 'true' 
-#RADARR_QUALITY_PROFILE='HD - 1080p'         # default: Whichever profile has index 1 (usually 'Any')
-
-# Sync options (set to "true" or "false" to enable/disable)
-#SYNC_WATCHLIST="true"               # default: true
-#SYNC_WATCHED="true"                 # default: true
-#SYNC_RATINGS="true"                 # default: true
-SYNC_WATCHLIST_TO_RADARR="true"      # default: false
-
-
+```sh
+cp letterboxd.env.example letterboxd.env
+# edit letterboxd.env with your Plex, Letterboxd, and TMDB credentials
 ```
+
+See [letterboxd.env.example](letterboxd.env.example) for all available options with comments.
 
 ## 🛠️ Running the Script
 
-There are multiple ways to run the `letterboxd_plex_sync` script:
+There are multiple ways to run the `letterboxd_plex_sync` script. Start by creating your config:
+
+```sh
+cp letterboxd.env.example letterboxd.env
+```
 
 ### 1. Docker Compose
 
@@ -186,7 +163,7 @@ Alternatively, you can run the container directly with Docker:
 ```sh
 docker run -d \
   --env-file letterboxd.env \
-  -v path/to/resources:/app/resources:rw \
+  -v path/to/data:/app/data:rw \
   treysu/letterboxd-plex-sync:latest
 ```
 
@@ -197,28 +174,28 @@ If you prefer to run the script locally without Docker:
 1. **Clone the Repository**:  
    ```sh
    git clone https://github.com/treysu/letterboxd-plex-sync.git
-   cd letterboxd-plex-sync/python
+   cd letterboxd-plex-sync
+   cp letterboxd.env.example letterboxd.env
    ```
 
 2. **Install Dependencies**:  
    Ensure you have Python installed, then install the required packages:
    ```sh
-   pip install -r requirements.txt
+   pip install -r python/requirements.txt
    ```
 
 3. **Run the Script**:  
-   Make sure your `letterboxd.env` file is properly set up with your Plex and Letterboxd credentials, then run the script:
+   From the repo root, load your env file and run:
    ```sh
-   source letterboxd.env
-   python generate_config.py
-   python sync_lb_to_plex.py
+   set -a && source letterboxd.env && set +a
+   python python/generate_config.py
+   python python/sync_lb_to_plex.py
    ```
 
 ## 🛠️ Future Improvements
 
 - 📊 Better handling of multiple Plex users.
 - 🔄 Sync additional types of data (e.g., tags, custom lists).
-- 🎭 Improved logging and error handling.
 
 ## 📣 Contributing
 
