@@ -18,6 +18,8 @@ Load-Env.ps1
 certs/*.pem
 letterboxd.env
 
-# Persistent TMDB mapping cache (keep data/ dir via .gitkeep)
-data/*.csv
+# Persistent TMDB mapping cache and runtime sync artifacts (see lb_URL_to_tmdb_id.csv.example; keep data/ via .gitkeep)
+data/lb_URL_to_tmdb_id.csv
+data/latest_sync_report.txt
+data/combined_log.txt
 tests/__pycache__
