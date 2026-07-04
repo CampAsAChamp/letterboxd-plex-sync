@@ -16,6 +16,7 @@ def configure_logging() -> None:
         format="%(asctime)s.%(msecs)03d %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
+        force=True,
     )
 
 

@@ -4,12 +4,15 @@ set -euo pipefail
 # Step 1: Generate letterboxd_stats config from environment
 python /app/generate_config.py
 
-touch /app/combined_log.txt
+COMBINED_LOG_PATH="${COMBINED_LOG_PATH:-/app/data/combined_log.txt}"
+mkdir -p "$(dirname "$COMBINED_LOG_PATH")"
+touch "$COMBINED_LOG_PATH"
 
 # Step 2: Optionally run sync immediately on startup
 if [ "${RUN_NOW:-false}" = "true" ]; then
   echo "RUN_NOW is set to true. Running job immediately..."
-  /usr/local/bin/python /app/sync_lb_to_plex.py >> /app/combined_log.txt 2>&1
+  # tee keeps compose/podman logs live while also appending to the persistent log file
+  /usr/local/bin/python /app/sync_lb_to_plex.py 2>&1 | tee -a "$COMBINED_LOG_PATH"
 else
   echo "RUN_NOW is not set. Proceeding with scheduled sync."
 fi

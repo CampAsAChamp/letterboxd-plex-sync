@@ -40,7 +40,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
       "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-${ARCH}" && \
     chmod +x /usr/local/bin/supercronic
 
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+ENV PYTHONUNBUFFERED=1 \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
