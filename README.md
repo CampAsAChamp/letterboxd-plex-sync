@@ -59,7 +59,7 @@ For users who manage their media with Radarr, the script offers an additional in
 The Python script is wrapped within a lightweight Docker container that automates execution via a cron process. The container:
 1. **Runs Immediately (Optional)**: With the `RUN_NOW` environment variable, the sync job can execute as soon as the container starts.
 2. **Schedules Jobs**: A cron process schedules recurring sync jobs based on the `CRON_SCHEDULE` environment variable.
-3. **Logs Activity**: Outputs logs to stdout (captured in `/app/combined_log.txt` in Docker) for easy monitoring.
+3. **Logs Activity**: Writes logs to stdout and appends them to `./data/combined_log.txt` on the host (via the `./data` volume mount). Each run also writes a structured `./data/latest_sync_report.txt` with per-title succeeded/failed outcomes; failed items are listed in the end-of-run summary.
 
 ### 📂 Configuration and Portability
 The container is designed for ease of use:
@@ -107,17 +107,25 @@ The script relies on several environment variables for configuration. Here is a 
 - **`MAP_LETTERBOXD_TO_TMDB`**: Set to `false` to skip building/updating the Letterboxd→TMDB mapping cache. Defaults to `true`. When the cache already contains every URL from your Letterboxd exports, API lookups are skipped automatically.
 - **`LB_TMDB_MAP_CSV_PATH_OVERRIDE`**: Path to the LB→TMDB mapping CSV cache. Defaults to `/app/data/lb_URL_to_tmdb_id.csv`.
 - **`LETTERBOXD_RATINGS_CSV`**, **`LETTERBOXD_WATCHLIST_CSV`**, **`LETTERBOXD_WATCHED_CSV`**: Override paths to Letterboxd export CSVs. Defaults to `/tmp/static/` paths set by `letterboxd_stats`.
+- **`SYNC_REPORT_PATH`**: Path for the per-run succeeded/failed report. Defaults to `/app/data/latest_sync_report.txt` (host: `./data/latest_sync_report.txt`).
+- **`SYNC_REPORT_INLINE_LIMIT`**: Max failed items printed per category in the end-of-run summary. Defaults to `25`.
+- **`COMBINED_LOG_PATH`**: Path for the append-only run log. Defaults to `/app/data/combined_log.txt` (host: `./data/combined_log.txt`).
 
 
 
 ### Setup: `letterboxd.env`
 
-Copy the example template and fill in your credentials:
+Copy the example templates and fill in your credentials:
 
 ```sh
 cp letterboxd.env.example letterboxd.env
 # edit letterboxd.env with your Plex, Letterboxd, and TMDB credentials
+
+# optional: seed the Letterboxd→TMDB mapping cache (otherwise created empty on first sync)
+cp data/lb_URL_to_tmdb_id.csv.example data/lb_URL_to_tmdb_id.csv
 ```
+
+The mapping cache is one `letterboxd_short_url,tmdb_id` pair per line (no header). See [data/lb_URL_to_tmdb_id.csv.example](data/lb_URL_to_tmdb_id.csv.example).
 
 See [letterboxd.env.example](letterboxd.env.example) for all available options with comments.
 
@@ -147,7 +155,7 @@ services:
         required: true
     volumes:
       - /etc/localtime:/etc/localtime:ro # optional: for accurate log times
-      - path/to/resources:/app/data:rw # technically optional: add folder to avoid regenerating lb to tmdb mapping CSV file
+      - ./data:/app/data:rw # persists lb_URL_to_tmdb_id.csv (copy from data/lb_URL_to_tmdb_id.csv.example)
 ```
 
 To use Docker Compose:
