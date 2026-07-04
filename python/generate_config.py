@@ -1,32 +1,39 @@
 #!/usr/bin/env python3
 
 import os
-import toml
+import sys
 
-# Define the path for the config.toml file
-config_path = os.path.expanduser('~/.config/letterboxd_stats/config.toml')
+from sync_config import require_env
 
-# Environment variables for Plex and Letterboxd configurations
-lb_username = os.getenv('LB_USERNAME', '')
-lb_password = os.getenv('LB_PASSWORD', '')
-tmdb_api_key = os.getenv('TMDB_API_KEY', '')
+config_path = os.path.expanduser("~/.config/letterboxd_stats/config.toml")
 
-# Create the config dictionary
-config = {
-    'root_folder': '/tmp/',
-    'poster_columns': 0,
-    'TMDB': {
-        'api_key': tmdb_api_key
-    },
-    'Letterboxd': {
-        'username': lb_username,
-        'password': lb_password
+
+def main() -> None:
+    """Generate letterboxd_stats config.toml from environment variables."""
+    env = require_env("LB_USERNAME", "LB_PASSWORD", "TMDB_API_KEY")
+
+    import toml
+
+    config = {
+        "root_folder": "/tmp/",
+        "poster_columns": 0,
+        "TMDB": {"api_key": env["TMDB_API_KEY"]},
+        "Letterboxd": {
+            "username": env["LB_USERNAME"],
+            "password": env["LB_PASSWORD"],
+        },
     }
-}
 
-# Write the config to the config.toml file
-os.makedirs(os.path.dirname(config_path), exist_ok=True)  # Create directory if it doesn't exist
-with open(config_path, 'w') as config_file:
-    toml.dump(config, config_file)
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, "w", encoding="utf-8") as config_file:
+        toml.dump(config, config_file)
 
-print(f"Config file generated at: {config_path}. You can ignore this if you are running in a container.")
+    print(
+        f"Config file generated at: {config_path}. "
+        "You can ignore this if you are running in a container.",
+        file=sys.stdout,
+    )
+
+
+if __name__ == "__main__":
+    main()

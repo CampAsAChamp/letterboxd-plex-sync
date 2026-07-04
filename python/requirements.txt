@@ -1,4 +1,4 @@
-git+https://github.com/treysu/letterboxd_stats.git@fix/auth-bug#egg=letterboxd_stats
+git+https://github.com/treysu/letterboxd_stats.git@d86dcb6e81b0a5a0a45e9a3a10bde677b433245c#egg=letterboxd_stats
 plexapi==4.17.1
 Requests==2.31.0
 toml==0.10.2

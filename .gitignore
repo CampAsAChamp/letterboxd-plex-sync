@@ -17,3 +17,7 @@ Load-Env.ps1
 # Local corporate TLS proxy root CA (machine-specific, not needed by other users)
 certs/*.pem
 letterboxd.env
+
+# Persistent TMDB mapping cache (keep data/ dir via .gitkeep)
+data/*.csv
+tests/__pycache__
