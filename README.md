@@ -47,12 +47,13 @@ The script can sync data across all movie-type libraries in your Plex server. Ho
 
 ### 📼 Local Library vs. Watchlist-Only Movies
 
-Not every Letterboxd movie you've rated or watched will necessarily be sitting in your Plex library, and the script treats those two cases differently because Plex itself treats them differently:
+Not every Letterboxd movie you've rated or watched will necessarily be sitting in your Plex library. The script resolves each movie via `resolve_plex_video_by_letterboxd_url`, which checks your indexed local library first and falls back to Plex's remote Discover/metadata-matching API when the movie isn't owned. Whether a given sync action can act on that remote fallback result depends entirely on which Plex API it needs:
 
-- **Ratings and watched status** are applied by calling `rate()`/`markPlayed()` on your **Plex Media Server**. These calls need a real library item with a valid `ratingKey` — there is no way to "rate" or "mark played" a movie your server doesn't actually have. If a Letterboxd movie isn't in your indexed Plex library, it's reported as `not_in_library` in the sync report and skipped, even if a TMDB mapping exists for it.
-- **Watchlist additions** are applied via `addToWatchlist()`, which is a **MyPlex account-level** action, not a server operation. It works for any movie Plex can resolve by TMDB ID through its Discover/metadata service — the movie doesn't need to be in your library at all. This is why watchlist syncing can succeed for movies your server doesn't own.
+- **Watched status** is applied via `account.markPlayed()` — Plex's Discover activity tracking, a **MyPlex account-level** action. This works for any movie Plex can resolve by TMDB ID, whether or not it's in your library. Watched status for off-library movies syncs successfully.
+- **Watchlist additions** are applied via `addToWatchlist()`, also a **MyPlex account-level** action. Same story — works regardless of library ownership.
+- **Ratings** are applied via `rate()` on your **Plex Media Server**, which requires a real library item with a valid `ratingKey`. Plex does not expose a rating action for Discover-only items (the corresponding API endpoint returns `405 Method Not Allowed`), so there is no way to rate a movie your server doesn't actually have. If a Letterboxd movie isn't in your indexed Plex library, its rating is reported as `not_in_library` and skipped, even if a TMDB mapping exists for it.
 
-Under the hood, `resolve_plex_video_by_letterboxd_url` first checks your indexed local library, then falls back to Plex's remote metadata-matching API. That remote fallback returns a valid object for building a watchlist entry, but it is **not** a real library item (its `ratingKey` is not usable for server writes), so the ratings/watched sync paths only ever act on videos confirmed to be in your local library index.
+In short: **watched status and watchlist sync for any movie Plex can resolve by TMDB ID; ratings only sync for movies physically in your Plex library.**
 
 ### 🎞️ Radarr Integration
 
@@ -98,7 +99,7 @@ The script relies on several environment variables for configuration. Here is a 
 - **`CRON_SCHEDULE`**: The schedule for the cron job (e.g., `0 4 */1 * *` for every day at 4:00AM). Defaults to `0 4 */1 * *`.
 ####
 - **`SYNC_WATCHLIST`**: Set to `true` to sync the watchlist from Letterboxd to Plex. Defaults to `true`. Watchlist additions are an account-level action and work for any movie with a TMDB mapping, whether or not it's in your server library.
-- **`SYNC_WATCHED`**: Set to `true` to sync watched status from Letterboxd to Plex. Defaults to `true`. Marking a movie as played is a server-level action — **the movie file must be in your Plex server library**; a TMDB mapping alone is not enough. See [Local Library vs. Watchlist-Only Movies](#-local-library-vs-watchlist-only-movies) below.
+- **`SYNC_WATCHED`**: Set to `true` to sync watched status from Letterboxd to Plex. Defaults to `true`. Watched status is applied via an account-level action and works for any movie with a TMDB mapping, whether or not it's in your server library.
 - **`SYNC_RATINGS`**: Set to `true` to sync user ratings from Letterboxd to Plex. Defaults to `true`. Rating a movie is a server-level action — **the movie file must be in your Plex server library**; a TMDB mapping alone is not enough. See [Local Library vs. Watchlist-Only Movies](#-local-library-vs-watchlist-only-movies) below.
 - **`PLEX_LIBRARY_NAME`**: The Plex Movies library to use. Defaults to syncing all Movie-type libraries.
 - **`PLEX_USER`**: The Plex user to use for syncing, if not the default admin.
