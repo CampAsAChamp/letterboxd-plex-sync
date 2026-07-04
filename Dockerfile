@@ -28,17 +28,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates procps tini wget && \
     rm -rf /var/lib/apt/lists/*
 
-# Install supercronic (cron replacement that inherits container env)
-RUN ARCH=$(dpkg --print-architecture) && \
-    wget -qO /usr/local/bin/supercronic \
-      "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-${ARCH}" && \
-    chmod +x /usr/local/bin/supercronic
-
 COPY certs/ /usr/local/share/ca-certificates/extra/
 RUN for f in /usr/local/share/ca-certificates/extra/*.pem; do \
       [ -f "$f" ] && cp "$f" "/usr/local/share/ca-certificates/$(basename "$f" .pem).crt"; \
     done; \
     update-ca-certificates
+
+# Install supercronic after CA certs (needed for TLS through corporate proxies)
+RUN ARCH=$(dpkg --print-architecture) && \
+    wget -qO /usr/local/bin/supercronic \
+      "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-${ARCH}" && \
+    chmod +x /usr/local/bin/supercronic
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
