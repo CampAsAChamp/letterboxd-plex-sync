@@ -13,3 +13,7 @@ Load-Env.ps1
 # Tools and editor settings
 .vscode/
 .cspell/
+
+# Local corporate TLS proxy root CA (machine-specific, not needed by other users)
+certs/*.pem
+letterboxd.env

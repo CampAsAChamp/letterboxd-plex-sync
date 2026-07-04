@@ -1,0 +1,16 @@
+name: letterboxd-plex-sync
+
+services:
+  letterboxd-plex-sync:
+    container_name: letterboxd-plex-sync
+    build: .
+    platform: linux/arm64
+    restart: unless-stopped
+    # image: treysu/letterboxd-plex-sync:latest  # use instead of build for the published image
+    # platform: linux/amd64  # uncomment on Apple Silicon if the image fails to run
+    env_file:
+      - path: letterboxd.env
+        required: true
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/app/data:rw
