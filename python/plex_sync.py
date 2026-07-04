@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import logging
 
-from plexapi.exceptions import BadRequest, NotFound
+from plexapi.exceptions import NotFound, PlexApiException
 from plexapi.utils import searchType
 
 from sync_config import is_dry_run
@@ -41,6 +41,19 @@ def resolve_plex_video_by_letterboxd_url(lb_url: str):
         return None
 
     return get_plex_video_by_tmdb_id(tmdb_id)
+
+
+def is_local_plex_video(video) -> bool:
+    """
+    Return True if `video` is a real local library item rather than a remote
+    Plex Discover/metadata match.
+
+    Discover matches (from get_plex_video_by_tmdb_id) have no valid ratingKey
+    (it's NaN), so rate()/markPlayed() always 404 against them — those calls
+    are local Plex Media Server operations, unlike addToWatchlist() which is
+    a MyPlex account-level action and works fine on Discover matches.
+    """
+    return video._server is not plex_metadata_server
 
 
 def get_plex_video_by_tmdb_id(tmdb_id: str, libtype: str = "movie"):
@@ -96,7 +109,7 @@ def sync_plex_ratings_from_letterboxd(ratings_csv: str, stats: SyncStats) -> Non
         lb_url = row[3]
 
         video = resolve_plex_video_by_letterboxd_url(lb_url)
-        if not video:
+        if not video or not is_local_plex_video(video):
             tmdb_id = letterboxd_to_tmdb_map.get(lb_url)
             detail = "no TMDB ID" if not tmdb_id else ""
             stats.ratings_not_in_library += 1
@@ -120,10 +133,10 @@ def sync_plex_ratings_from_letterboxd(ratings_csv: str, stats: SyncStats) -> Non
                     stats.rated += 1
                     stats.record("rating", lb_title, "updated", f"{lb_rating}/10")
                     logging.debug("Rated %s at %s/10", video.title, lb_rating)
-                except BadRequest:
-                    stats.record("rating", lb_title, "error", "Plex BadRequest")
+                except PlexApiException as exc:
+                    stats.record("rating", lb_title, "error", f"Plex error: {exc}")
                     logging.error(
-                        'An error occurred when rating "%s".', video.title
+                        'An error occurred when rating "%s": %s', video.title, exc
                     )
         else:
             stats.ratings_skipped += 1
@@ -181,10 +194,12 @@ def sync_plex_watchlist_from_letterboxd(
                     stats.watchlist_added += 1
                     stats.record("watchlist", lb_title, "added")
                     logging.info("Added to watchlist: %s", video.title)
-                except BadRequest:
-                    stats.record("watchlist", lb_title, "error", "Plex BadRequest")
+                except PlexApiException as exc:
+                    stats.record("watchlist", lb_title, "error", f"Plex error: {exc}")
                     logging.error(
-                        'An error occurred when adding "%s" to watchlist.', video.title
+                        'An error occurred when adding "%s" to watchlist: %s',
+                        video.title,
+                        exc,
                     )
         else:
             stats.watchlist_skipped += 1
@@ -212,7 +227,7 @@ def sync_plex_watched_status_from_letterboxd(watched_csv: str, stats: SyncStats)
         lb_url = row[3]
 
         video = resolve_plex_video_by_letterboxd_url(lb_url)
-        if not video:
+        if not video or not is_local_plex_video(video):
             tmdb_id = letterboxd_to_tmdb_map.get(lb_url)
             detail = "no TMDB ID" if not tmdb_id else ""
             stats.watched_not_in_library += 1
@@ -232,10 +247,12 @@ def sync_plex_watched_status_from_letterboxd(watched_csv: str, stats: SyncStats)
                     stats.marked_watched += 1
                     stats.record("watched", lb_title, "marked")
                     logging.info("Marked %s as played.", video.title)
-                except BadRequest:
-                    stats.record("watched", lb_title, "error", "Plex BadRequest")
+                except PlexApiException as exc:
+                    stats.record("watched", lb_title, "error", f"Plex error: {exc}")
                     logging.error(
-                        'An error occurred when marking "%s" as played.', video.title
+                        'An error occurred when marking "%s" as played: %s',
+                        video.title,
+                        exc,
                     )
         else:
             stats.watched_skipped += 1

@@ -5,14 +5,28 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock, patch
 
+import plex_sync
 from plex_sync import (
     get_plex_video_from_local_library,
+    is_local_plex_video,
     resolve_plex_video_by_letterboxd_url,
     sync_plex_ratings_from_letterboxd,
     sync_plex_watched_status_from_letterboxd,
 )
 from sync_state import letterboxd_to_tmdb_map, plex_guid_lookup_table
 from sync_stats import SyncStats
+
+
+class TestIsLocalPlexVideo:
+    def test_true_for_local_library_video(self):
+        video = MagicMock()
+        video._server = MagicMock(name="local_plex_server")
+        assert is_local_plex_video(video) is True
+
+    def test_false_for_remote_metadata_match(self):
+        video = MagicMock()
+        video._server = plex_sync.plex_metadata_server
+        assert is_local_plex_video(video) is False
 
 
 class TestResolvePlexVideoByLetterboxdUrl:
@@ -77,7 +91,7 @@ class TestSyncPlexRatingsFromLetterboxd:
         letterboxd_to_tmdb_map.clear()
         plex_guid_lookup_table.clear()
 
-    def test_rates_via_metadata_resolver_in_dry_run(self, tmp_path, caplog, monkeypatch):
+    def test_rates_local_library_video_in_dry_run(self, tmp_path, caplog, monkeypatch):
         monkeypatch.setenv("DRY_RUN", "true")
         lb_url = "https://boxd.it/xyz"
         letterboxd_to_tmdb_map[lb_url] = "496243"
@@ -89,12 +103,12 @@ class TestSyncPlexRatingsFromLetterboxd:
             encoding="utf-8",
         )
 
-        metadata_video = MagicMock(title="Parasite", userRating=0.0)
+        local_video = MagicMock(title="Parasite", userRating=0.0)
         stats = SyncStats(dry_run=True)
 
         with patch(
             "plex_sync.resolve_plex_video_by_letterboxd_url",
-            return_value=metadata_video,
+            return_value=local_video,
         ):
             with caplog.at_level(logging.INFO):
                 sync_plex_ratings_from_letterboxd(str(ratings_csv), stats)
@@ -106,7 +120,34 @@ class TestSyncPlexRatingsFromLetterboxd:
             for record in caplog.records
         )
 
-    def test_records_badrequest_when_rating_fails(self, tmp_path, monkeypatch):
+    def test_skips_remote_metadata_match_as_not_in_library(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("DRY_RUN", "true")
+        lb_url = "https://boxd.it/xyz"
+        letterboxd_to_tmdb_map[lb_url] = "496243"
+
+        ratings_csv = tmp_path / "ratings.csv"
+        ratings_csv.write_text(
+            "Date,Name,Year,URI,Rating\n"
+            f"2024-01-01,Parasite,2019,{lb_url},4.5\n",
+            encoding="utf-8",
+        )
+
+        remote_video = MagicMock(title="Parasite", userRating=0.0)
+        remote_video._server = plex_sync.plex_metadata_server
+        stats = SyncStats(dry_run=True)
+
+        with patch(
+            "plex_sync.resolve_plex_video_by_letterboxd_url",
+            return_value=remote_video,
+        ):
+            sync_plex_ratings_from_letterboxd(str(ratings_csv), stats)
+
+        assert stats.rated == 0
+        assert stats.ratings_not_in_library == 1
+        assert stats.items[0].status == "not_in_library"
+        remote_video.rate.assert_not_called()
+
+    def test_records_plex_error_when_rating_fails(self, tmp_path, monkeypatch):
         monkeypatch.setenv("DRY_RUN", "false")
         lb_url = "https://boxd.it/xyz"
         letterboxd_to_tmdb_map[lb_url] = "496243"
@@ -118,23 +159,23 @@ class TestSyncPlexRatingsFromLetterboxd:
             encoding="utf-8",
         )
 
-        class FakeBadRequest(Exception):
+        class FakePlexApiException(Exception):
             pass
 
-        metadata_video = MagicMock(title="Parasite", userRating=0.0)
-        metadata_video.rate.side_effect = FakeBadRequest("rating rejected")
+        local_video = MagicMock(title="Parasite", userRating=0.0)
+        local_video.rate.side_effect = FakePlexApiException("rating rejected")
         stats = SyncStats()
 
-        with patch("plex_sync.BadRequest", FakeBadRequest):
+        with patch("plex_sync.PlexApiException", FakePlexApiException):
             with patch(
                 "plex_sync.resolve_plex_video_by_letterboxd_url",
-                return_value=metadata_video,
+                return_value=local_video,
             ):
                 sync_plex_ratings_from_letterboxd(str(ratings_csv), stats)
 
         assert stats.rated == 0
         assert stats.items[-1].status == "error"
-        assert stats.items[-1].detail == "Plex BadRequest"
+        assert stats.items[-1].detail == "Plex error: rating rejected"
 
     def test_records_not_in_library_when_resolver_returns_none(self, tmp_path):
         lb_url = "https://boxd.it/missing"
@@ -158,7 +199,7 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
         letterboxd_to_tmdb_map.clear()
         plex_guid_lookup_table.clear()
 
-    def test_marks_via_metadata_resolver_in_dry_run(self, tmp_path, caplog, monkeypatch):
+    def test_marks_local_library_video_in_dry_run(self, tmp_path, caplog, monkeypatch):
         monkeypatch.setenv("DRY_RUN", "true")
         lb_url = "https://boxd.it/xyz"
         letterboxd_to_tmdb_map[lb_url] = "496243"
@@ -170,12 +211,12 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
             encoding="utf-8",
         )
 
-        metadata_video = MagicMock(title="Parasite", isPlayed=False)
+        local_video = MagicMock(title="Parasite", isPlayed=False)
         stats = SyncStats(dry_run=True)
 
         with patch(
             "plex_sync.resolve_plex_video_by_letterboxd_url",
-            return_value=metadata_video,
+            return_value=local_video,
         ):
             with caplog.at_level(logging.INFO):
                 sync_plex_watched_status_from_letterboxd(str(watched_csv), stats)
@@ -187,7 +228,7 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
             for record in caplog.records
         )
 
-    def test_skips_already_played_via_metadata_resolver(self, tmp_path, monkeypatch):
+    def test_skips_already_played_local_library_video(self, tmp_path, monkeypatch):
         monkeypatch.setenv("DRY_RUN", "true")
         lb_url = "https://boxd.it/xyz"
         letterboxd_to_tmdb_map[lb_url] = "496243"
@@ -199,12 +240,12 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
             encoding="utf-8",
         )
 
-        metadata_video = MagicMock(title="Parasite", isPlayed=True)
+        local_video = MagicMock(title="Parasite", isPlayed=True)
         stats = SyncStats(dry_run=True)
 
         with patch(
             "plex_sync.resolve_plex_video_by_letterboxd_url",
-            return_value=metadata_video,
+            return_value=local_video,
         ):
             sync_plex_watched_status_from_letterboxd(str(watched_csv), stats)
 
@@ -212,7 +253,34 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
         assert stats.watched_skipped == 1
         assert stats.items[0].status == "already_played"
 
-    def test_records_badrequest_when_mark_played_fails(self, tmp_path, monkeypatch):
+    def test_skips_remote_metadata_match_as_not_in_library(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("DRY_RUN", "true")
+        lb_url = "https://boxd.it/xyz"
+        letterboxd_to_tmdb_map[lb_url] = "496243"
+
+        watched_csv = tmp_path / "watched.csv"
+        watched_csv.write_text(
+            "Date,Name,Year,URI\n"
+            f"2024-01-01,Parasite,2019,{lb_url}\n",
+            encoding="utf-8",
+        )
+
+        remote_video = MagicMock(title="Parasite", isPlayed=False)
+        remote_video._server = plex_sync.plex_metadata_server
+        stats = SyncStats(dry_run=True)
+
+        with patch(
+            "plex_sync.resolve_plex_video_by_letterboxd_url",
+            return_value=remote_video,
+        ):
+            sync_plex_watched_status_from_letterboxd(str(watched_csv), stats)
+
+        assert stats.marked_watched == 0
+        assert stats.watched_not_in_library == 1
+        assert stats.items[0].status == "not_in_library"
+        remote_video.markPlayed.assert_not_called()
+
+    def test_records_plex_error_when_mark_played_fails(self, tmp_path, monkeypatch):
         monkeypatch.setenv("DRY_RUN", "false")
         lb_url = "https://boxd.it/xyz"
         letterboxd_to_tmdb_map[lb_url] = "496243"
@@ -224,23 +292,23 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
             encoding="utf-8",
         )
 
-        class FakeBadRequest(Exception):
+        class FakePlexApiException(Exception):
             pass
 
-        metadata_video = MagicMock(title="Parasite", isPlayed=False)
-        metadata_video.markPlayed.side_effect = FakeBadRequest("mark played rejected")
+        local_video = MagicMock(title="Parasite", isPlayed=False)
+        local_video.markPlayed.side_effect = FakePlexApiException("mark played rejected")
         stats = SyncStats()
 
-        with patch("plex_sync.BadRequest", FakeBadRequest):
+        with patch("plex_sync.PlexApiException", FakePlexApiException):
             with patch(
                 "plex_sync.resolve_plex_video_by_letterboxd_url",
-                return_value=metadata_video,
+                return_value=local_video,
             ):
                 sync_plex_watched_status_from_letterboxd(str(watched_csv), stats)
 
         assert stats.marked_watched == 0
         assert stats.items[-1].status == "error"
-        assert stats.items[-1].detail == "Plex BadRequest"
+        assert stats.items[-1].detail == "Plex error: mark played rejected"
 
     def test_records_not_in_library_when_resolver_returns_none(self, tmp_path):
         lb_url = "https://boxd.it/missing"
