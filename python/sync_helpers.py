@@ -17,6 +17,35 @@ TMDB_API_BASE = "https://api.themoviedb.org/3"
 TMDB_REQUEST_DELAY_SECONDS = 0.26
 
 
+def retry_with_backoff(
+    func,
+    *,
+    attempts: int = 3,
+    initial_delay_seconds: float = 5.0,
+    backoff_factor: float = 4.0,
+    exceptions: tuple[type[BaseException], ...] = (Exception,),
+    on_retry=None,
+):
+    """
+    Call `func()`, retrying on the given exceptions with exponential backoff.
+
+    Re-raises the last exception if all attempts fail. `on_retry(attempt, exc, delay)`
+    is called (if given) before each sleep, so callers can log a clear warning instead
+    of letting a noisy traceback fly on transient failures (e.g. rate limiting).
+    """
+    delay = initial_delay_seconds
+    for attempt in range(1, attempts + 1):
+        try:
+            return func()
+        except exceptions as exc:
+            if attempt == attempts:
+                raise
+            if on_retry:
+                on_retry(attempt, exc, delay)
+            time.sleep(delay)
+            delay *= backoff_factor
+
+
 def letterboxd_rating_to_plex(lb_rating: float) -> float:
     """Convert Letterboxd's 0–5 scale to Plex's 0–10 scale."""
     return lb_rating * 2

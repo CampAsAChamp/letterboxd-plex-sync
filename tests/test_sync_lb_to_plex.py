@@ -19,7 +19,68 @@ from sync_helpers import (
     letterboxd_rating_to_plex,
     lookup_tmdb_id,
     parse_radarr_error_response,
+    retry_with_backoff,
 )
+
+
+class TestRetryWithBackoff:
+    def test_returns_result_on_first_success(self):
+        func = MagicMock(return_value="ok")
+        assert retry_with_backoff(func, attempts=3, initial_delay_seconds=0) == "ok"
+        func.assert_called_once()
+
+    def test_retries_then_succeeds(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr("sync_helpers.time.sleep", sleeps.append)
+
+        func = MagicMock(side_effect=[ValueError("boom"), "ok"])
+        result = retry_with_backoff(
+            func, attempts=3, initial_delay_seconds=1.0, exceptions=(ValueError,)
+        )
+
+        assert result == "ok"
+        assert func.call_count == 2
+        assert sleeps == [1.0]
+
+    def test_raises_after_exhausting_attempts(self, monkeypatch):
+        monkeypatch.setattr("sync_helpers.time.sleep", lambda _seconds: None)
+        func = MagicMock(side_effect=ValueError("boom"))
+
+        with pytest.raises(ValueError, match="boom"):
+            retry_with_backoff(
+                func, attempts=3, initial_delay_seconds=0, exceptions=(ValueError,)
+            )
+
+        assert func.call_count == 3
+
+    def test_does_not_retry_unlisted_exceptions(self):
+        func = MagicMock(side_effect=KeyError("nope"))
+
+        with pytest.raises(KeyError):
+            retry_with_backoff(
+                func, attempts=3, initial_delay_seconds=0, exceptions=(ValueError,)
+            )
+
+        func.assert_called_once()
+
+    def test_calls_on_retry_callback_before_each_sleep(self, monkeypatch):
+        monkeypatch.setattr("sync_helpers.time.sleep", lambda _seconds: None)
+        on_retry = MagicMock()
+        func = MagicMock(side_effect=[ValueError("boom"), "ok"])
+
+        retry_with_backoff(
+            func,
+            attempts=3,
+            initial_delay_seconds=5.0,
+            exceptions=(ValueError,),
+            on_retry=on_retry,
+        )
+
+        on_retry.assert_called_once()
+        attempt, exc, delay = on_retry.call_args[0]
+        assert attempt == 1
+        assert isinstance(exc, ValueError)
+        assert delay == 5.0
 
 
 class TestLetterboxdRatingToPlex:

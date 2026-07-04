@@ -28,7 +28,7 @@ from plex_sync import (
 )
 from radarr_sync import sync_watchlist_to_radarr
 from sync_config import build_workflow_steps, configure_logging, is_dry_run, require_env
-from sync_helpers import StageProgress, WorkflowSteps
+from sync_helpers import StageProgress, WorkflowSteps, retry_with_backoff
 from sync_state import letterboxd_to_tmdb_map
 from sync_stats import SyncStats
 from tmdb_mapping import (
@@ -43,6 +43,9 @@ current_script_dir = os.path.dirname(current_script_path)
 os.chdir(current_script_dir)
 
 configure_logging()
+
+LETTERBOXD_LOGIN_ATTEMPTS = 3
+LETTERBOXD_LOGIN_INITIAL_DELAY_SECONDS = 30.0
 
 
 def main() -> None:
@@ -128,10 +131,41 @@ def main() -> None:
 
     with workflow.step("Download Letterboxd user data"):
         logging.info("Logging into Letterboxd (this may take a minute) ...")
-        downloader = ws.Connector()
-        downloader.login()
-        logging.info("Letterboxd login successful; downloading export CSVs ...")
-        downloader.download_stats()
+
+        def _login_and_download() -> None:
+            downloader = ws.Connector()
+            downloader.login()
+            logging.info("Letterboxd login successful; downloading export CSVs ...")
+            downloader.download_stats()
+
+        def _log_retry(attempt: int, exc: Exception, delay: float) -> None:
+            logging.warning(
+                "Letterboxd login/download failed (attempt %d/%d): %s. "
+                "This is often a transient rate limit or anti-bot challenge; "
+                "retrying in %.0fs ...",
+                attempt,
+                LETTERBOXD_LOGIN_ATTEMPTS,
+                exc,
+                delay,
+            )
+
+        try:
+            retry_with_backoff(
+                _login_and_download,
+                attempts=LETTERBOXD_LOGIN_ATTEMPTS,
+                initial_delay_seconds=LETTERBOXD_LOGIN_INITIAL_DELAY_SECONDS,
+                exceptions=(ConnectionError, ValueError, OSError),
+                on_retry=_log_retry,
+            )
+        except (ConnectionError, ValueError, OSError) as exc:
+            logging.error(
+                "Failed to log in to Letterboxd after %d attempts: %s. "
+                "Skipping this run; it will retry on the next scheduled sync.",
+                LETTERBOXD_LOGIN_ATTEMPTS,
+                exc,
+            )
+            sys.exit(1)
+
         logging.info("Letterboxd export download complete")
 
     if plex_library_name:
