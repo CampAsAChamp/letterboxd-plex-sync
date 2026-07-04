@@ -218,7 +218,7 @@ def main() -> None:
 
     if sync_watched_enabled:
         with workflow.step("Sync watched status to Plex"):
-            sync_plex_watched_status_from_letterboxd(watched_csv, stats)
+            sync_plex_watched_status_from_letterboxd(user, watched_csv, stats)
 
     if sync_ratings_enabled:
         with workflow.step("Sync ratings to Plex"):

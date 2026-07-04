@@ -212,6 +212,7 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
         )
 
         local_video = MagicMock(title="Parasite", isPlayed=False)
+        user = MagicMock()
         stats = SyncStats(dry_run=True)
 
         with patch(
@@ -219,7 +220,7 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
             return_value=local_video,
         ):
             with caplog.at_level(logging.INFO):
-                sync_plex_watched_status_from_letterboxd(str(watched_csv), stats)
+                sync_plex_watched_status_from_letterboxd(user, str(watched_csv), stats)
 
         assert stats.marked_watched == 1
         assert stats.watched_not_in_library == 0
@@ -227,6 +228,7 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
             "[DRY RUN] Would mark Parasite as played." in record.message
             for record in caplog.records
         )
+        user.isPlayed.assert_not_called()
 
     def test_skips_already_played_local_library_video(self, tmp_path, monkeypatch):
         monkeypatch.setenv("DRY_RUN", "true")
@@ -241,20 +243,21 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
         )
 
         local_video = MagicMock(title="Parasite", isPlayed=True)
+        user = MagicMock()
         stats = SyncStats(dry_run=True)
 
         with patch(
             "plex_sync.resolve_plex_video_by_letterboxd_url",
             return_value=local_video,
         ):
-            sync_plex_watched_status_from_letterboxd(str(watched_csv), stats)
+            sync_plex_watched_status_from_letterboxd(user, str(watched_csv), stats)
 
         assert stats.marked_watched == 0
         assert stats.watched_skipped == 1
         assert stats.items[0].status == "already_played"
 
-    def test_skips_remote_metadata_match_as_not_in_library(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("DRY_RUN", "true")
+    def test_marks_remote_metadata_match_via_account(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("DRY_RUN", "false")
         lb_url = "https://boxd.it/xyz"
         letterboxd_to_tmdb_map[lb_url] = "496243"
 
@@ -265,20 +268,53 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
             encoding="utf-8",
         )
 
-        remote_video = MagicMock(title="Parasite", isPlayed=False)
+        remote_video = MagicMock(title="Parasite")
         remote_video._server = plex_sync.plex_metadata_server
-        stats = SyncStats(dry_run=True)
+        user = MagicMock()
+        user.isPlayed.return_value = False
+        stats = SyncStats()
 
         with patch(
             "plex_sync.resolve_plex_video_by_letterboxd_url",
             return_value=remote_video,
         ):
-            sync_plex_watched_status_from_letterboxd(str(watched_csv), stats)
+            sync_plex_watched_status_from_letterboxd(user, str(watched_csv), stats)
+
+        assert stats.marked_watched == 1
+        assert stats.watched_not_in_library == 0
+        assert stats.items[0].status == "marked"
+        user.isPlayed.assert_called_once_with(remote_video)
+        user.markPlayed.assert_called_once_with(remote_video)
+        remote_video.markPlayed.assert_not_called()
+
+    def test_skips_already_played_remote_metadata_match(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("DRY_RUN", "false")
+        lb_url = "https://boxd.it/xyz"
+        letterboxd_to_tmdb_map[lb_url] = "496243"
+
+        watched_csv = tmp_path / "watched.csv"
+        watched_csv.write_text(
+            "Date,Name,Year,URI\n"
+            f"2024-01-01,Parasite,2019,{lb_url}\n",
+            encoding="utf-8",
+        )
+
+        remote_video = MagicMock(title="Parasite")
+        remote_video._server = plex_sync.plex_metadata_server
+        user = MagicMock()
+        user.isPlayed.return_value = True
+        stats = SyncStats()
+
+        with patch(
+            "plex_sync.resolve_plex_video_by_letterboxd_url",
+            return_value=remote_video,
+        ):
+            sync_plex_watched_status_from_letterboxd(user, str(watched_csv), stats)
 
         assert stats.marked_watched == 0
-        assert stats.watched_not_in_library == 1
-        assert stats.items[0].status == "not_in_library"
-        remote_video.markPlayed.assert_not_called()
+        assert stats.watched_skipped == 1
+        assert stats.items[0].status == "already_played"
+        user.markPlayed.assert_not_called()
 
     def test_records_plex_error_when_mark_played_fails(self, tmp_path, monkeypatch):
         monkeypatch.setenv("DRY_RUN", "false")
@@ -297,6 +333,7 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
 
         local_video = MagicMock(title="Parasite", isPlayed=False)
         local_video.markPlayed.side_effect = FakePlexApiException("mark played rejected")
+        user = MagicMock()
         stats = SyncStats()
 
         with patch("plex_sync.PlexApiException", FakePlexApiException):
@@ -304,7 +341,7 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
                 "plex_sync.resolve_plex_video_by_letterboxd_url",
                 return_value=local_video,
             ):
-                sync_plex_watched_status_from_letterboxd(str(watched_csv), stats)
+                sync_plex_watched_status_from_letterboxd(user, str(watched_csv), stats)
 
         assert stats.marked_watched == 0
         assert stats.items[-1].status == "error"
@@ -318,10 +355,11 @@ class TestSyncPlexWatchedStatusFromLetterboxd:
             f"2024-01-01,Dope Thief,2025,{lb_url}\n",
             encoding="utf-8",
         )
+        user = MagicMock()
         stats = SyncStats()
 
         with patch("plex_sync.resolve_plex_video_by_letterboxd_url", return_value=None):
-            sync_plex_watched_status_from_letterboxd(str(watched_csv), stats)
+            sync_plex_watched_status_from_letterboxd(user, str(watched_csv), stats)
 
         assert stats.watched_not_in_library == 1
         assert stats.items[0].status == "not_in_library"

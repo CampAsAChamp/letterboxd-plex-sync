@@ -209,8 +209,18 @@ def sync_plex_watchlist_from_letterboxd(
     progress.finish()
 
 
-def sync_plex_watched_status_from_letterboxd(watched_csv: str, stats: SyncStats) -> None:
-    """Sync user watched status from Letterboxd to Plex (marks played only)."""
+def sync_plex_watched_status_from_letterboxd(
+    user, watched_csv: str, stats: SyncStats
+) -> None:
+    """
+    Sync user watched status from Letterboxd to Plex (marks played only).
+
+    Movies in the local library are marked played on the Plex Media Server.
+    Movies resolved only via Plex's remote Discover metadata (not owned
+    locally) are marked played on the account instead — account.markPlayed()
+    posts to Plex's Discover activity endpoint, which (unlike rate()) is
+    supported for items you don't own.
+    """
     rows: list[list[str]] = []
     with open(watched_csv, encoding="utf-8") as csvfile:
         reader = csv.reader(csvfile, delimiter=",")
@@ -227,7 +237,7 @@ def sync_plex_watched_status_from_letterboxd(watched_csv: str, stats: SyncStats)
         lb_url = row[3]
 
         video = resolve_plex_video_by_letterboxd_url(lb_url)
-        if not video or not is_local_plex_video(video):
+        if not video:
             tmdb_id = letterboxd_to_tmdb_map.get(lb_url)
             detail = "no TMDB ID" if not tmdb_id else ""
             stats.watched_not_in_library += 1
@@ -236,14 +246,20 @@ def sync_plex_watched_status_from_letterboxd(watched_csv: str, stats: SyncStats)
             progress.advance()
             continue
 
-        if not video.isPlayed:
+        local = is_local_plex_video(video)
+        is_played = video.isPlayed if local else user.isPlayed(video)
+
+        if not is_played:
             if is_dry_run():
                 logging.info("[DRY RUN] Would mark %s as played.", video.title)
                 stats.marked_watched += 1
                 stats.record("watched", lb_title, "marked")
             else:
                 try:
-                    video.markPlayed()
+                    if local:
+                        video.markPlayed()
+                    else:
+                        user.markPlayed(video)
                     stats.marked_watched += 1
                     stats.record("watched", lb_title, "marked")
                     logging.info("Marked %s as played.", video.title)
