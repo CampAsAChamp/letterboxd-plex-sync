@@ -148,13 +148,13 @@ class SyncStats:
             self.mappings_failed,
         )
         logging.info(
-            "  Ratings: %d updated, %d unchanged, %d not in library",
+            "  Ratings: %d updated, %d unchanged, %d not found on Plex",
             self.rated,
             self.ratings_skipped,
             self.ratings_not_in_library,
         )
         logging.info(
-            "  Watched: %d marked played, %d already played, %d not in library",
+            "  Watched: %d marked played, %d already played, %d not found on Plex",
             self.marked_watched,
             self.watched_skipped,
             self.watched_not_in_library,

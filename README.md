@@ -89,8 +89,8 @@ The script relies on several environment variables for configuration. Here is a 
 - **`CRON_SCHEDULE`**: The schedule for the cron job (e.g., `0 4 */1 * *` for every day at 4:00AM). Defaults to `0 4 */1 * *`.
 ####
 - **`SYNC_WATCHLIST`**: Set to `true` to sync the watchlist from Letterboxd to Plex. Defaults to `true`.
-- **`SYNC_WATCHED`**: Set to `true` to sync watched status from Letterboxd to Plex. Defaults to `true`.
-- **`SYNC_RATINGS`**: Set to `true` to sync user ratings from Letterboxd to Plex. Defaults to `true`.
+- **`SYNC_WATCHED`**: Set to `true` to sync watched status from Letterboxd to Plex. Defaults to `true`. Watched status applies to your Plex account via metadata and does not require the movie file to be in your server library (a TMDB mapping is still required).
+- **`SYNC_RATINGS`**: Set to `true` to sync user ratings from Letterboxd to Plex. Defaults to `true`. Ratings apply to your Plex account via metadata and do not require the movie file to be in your server library (a TMDB mapping is still required).
 - **`PLEX_LIBRARY_NAME`**: The Plex Movies library to use. Defaults to syncing all Movie-type libraries.
 - **`PLEX_USER`**: The Plex user to use for syncing, if not the default admin.
 - **`PLEX_PIN`**: The PIN associated with the Plex user, if required.

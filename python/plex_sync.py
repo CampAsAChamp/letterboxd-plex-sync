@@ -18,8 +18,8 @@ from sync_state import (
 from sync_stats import SyncStats
 
 
-def get_plex_video_by_letterboxd_url(lb_url: str):
-    """Fetch the Plex video object corresponding to a Letterboxd URL."""
+def get_plex_video_from_local_library(lb_url: str):
+    """Look up a Plex video in the indexed local library by Letterboxd URL."""
     try:
         tmdb_id = letterboxd_to_tmdb_map[lb_url]
         return plex_guid_lookup_table[f"tmdb://{tmdb_id}"]
@@ -28,6 +28,19 @@ def get_plex_video_by_letterboxd_url(lb_url: str):
             "Failed to find video in Plex Library for %s. Reason: %s", lb_url, exc
         )
         return None
+
+
+def resolve_plex_video_by_letterboxd_url(lb_url: str):
+    """Resolve a Plex video by Letterboxd URL (local library, then metadata API)."""
+    video = get_plex_video_from_local_library(lb_url)
+    if video:
+        return video
+
+    tmdb_id = letterboxd_to_tmdb_map.get(lb_url)
+    if not tmdb_id:
+        return None
+
+    return get_plex_video_by_tmdb_id(tmdb_id)
 
 
 def get_plex_video_by_tmdb_id(tmdb_id: str, libtype: str = "movie"):
@@ -82,10 +95,12 @@ def sync_plex_ratings_from_letterboxd(ratings_csv: str, stats: SyncStats) -> Non
         lb_title = row[1]
         lb_url = row[3]
 
-        video = get_plex_video_by_letterboxd_url(lb_url)
+        video = resolve_plex_video_by_letterboxd_url(lb_url)
         if not video:
+            tmdb_id = letterboxd_to_tmdb_map.get(lb_url)
+            detail = "no TMDB ID" if not tmdb_id else ""
             stats.ratings_not_in_library += 1
-            stats.record("rating", lb_title, "not_in_library")
+            stats.record("rating", lb_title, "not_in_library", detail)
             logging.debug("Rating: Failed to find: %s", lb_title)
             progress.advance()
             continue
@@ -100,10 +115,16 @@ def sync_plex_ratings_from_letterboxd(ratings_csv: str, stats: SyncStats) -> Non
                 stats.rated += 1
                 stats.record("rating", lb_title, "updated", f"{lb_rating}/10")
             else:
-                video.rate(lb_rating)
-                stats.rated += 1
-                stats.record("rating", lb_title, "updated", f"{lb_rating}/10")
-                logging.debug("Rated %s at %s/10", video.title, lb_rating)
+                try:
+                    video.rate(lb_rating)
+                    stats.rated += 1
+                    stats.record("rating", lb_title, "updated", f"{lb_rating}/10")
+                    logging.debug("Rated %s at %s/10", video.title, lb_rating)
+                except BadRequest:
+                    stats.record("rating", lb_title, "error", "Plex BadRequest")
+                    logging.error(
+                        'An error occurred when rating "%s".', video.title
+                    )
         else:
             stats.ratings_skipped += 1
             stats.record("rating", lb_title, "unchanged", f"{video.userRating}/10")
@@ -133,16 +154,14 @@ def sync_plex_watchlist_from_letterboxd(
         lb_title = row[1]
         lb_url = row[3]
 
-        video = get_plex_video_by_letterboxd_url(lb_url)
+        video = resolve_plex_video_by_letterboxd_url(lb_url)
         if not video:
-            tmdb_id = letterboxd_to_tmdb_map.get(lb_url)
-            if not tmdb_id:
+            if not letterboxd_to_tmdb_map.get(lb_url):
                 stats.watchlist_not_in_library += 1
                 stats.record("watchlist", lb_title, "not_in_library", "no TMDB ID")
                 logging.warning("Skipping: No TMDB ID found for %s", lb_url)
                 progress.advance()
                 continue
-            video = get_plex_video_by_tmdb_id(tmdb_id)
 
         if not video:
             stats.watchlist_not_in_library += 1
@@ -192,10 +211,12 @@ def sync_plex_watched_status_from_letterboxd(watched_csv: str, stats: SyncStats)
         lb_title = row[1]
         lb_url = row[3]
 
-        video = get_plex_video_by_letterboxd_url(lb_url)
+        video = resolve_plex_video_by_letterboxd_url(lb_url)
         if not video:
+            tmdb_id = letterboxd_to_tmdb_map.get(lb_url)
+            detail = "no TMDB ID" if not tmdb_id else ""
             stats.watched_not_in_library += 1
-            stats.record("watched", lb_title, "not_in_library")
+            stats.record("watched", lb_title, "not_in_library", detail)
             logging.debug("Watched: Failed to find: %s", lb_title)
             progress.advance()
             continue
@@ -206,10 +227,16 @@ def sync_plex_watched_status_from_letterboxd(watched_csv: str, stats: SyncStats)
                 stats.marked_watched += 1
                 stats.record("watched", lb_title, "marked")
             else:
-                video.markPlayed()
-                stats.marked_watched += 1
-                stats.record("watched", lb_title, "marked")
-                logging.info("Marked %s as played.", video.title)
+                try:
+                    video.markPlayed()
+                    stats.marked_watched += 1
+                    stats.record("watched", lb_title, "marked")
+                    logging.info("Marked %s as played.", video.title)
+                except BadRequest:
+                    stats.record("watched", lb_title, "error", "Plex BadRequest")
+                    logging.error(
+                        'An error occurred when marking "%s" as played.', video.title
+                    )
         else:
             stats.watched_skipped += 1
             stats.record("watched", lb_title, "already_played")
